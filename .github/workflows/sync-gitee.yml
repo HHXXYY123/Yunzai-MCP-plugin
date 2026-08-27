@@ -1,0 +1,54 @@
+name: Sync from Gitee
+
+on:
+  schedule:
+    # GitHub Actions 使用 UTC；每小时第 17 分钟检查一次
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-from-gitee
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout GitHub repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: master
+
+      - name: Fetch and merge Gitee master
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add gitee https://gitee.com/xyzqwefd/Yunzai-MCP-plugin.git
+
+          # Gitee 偶发 TLS/网络失败时重试，避免一次临时故障导致本轮同步失败
+          for attempt in 1 2 3; do
+            if git fetch --prune gitee master; then
+              break
+            fi
+            if [ "$attempt" = 3 ]; then
+              echo "无法拉取 Gitee master，已重试 3 次"
+              exit 1
+            fi
+            sleep 15
+          done
+
+          # 源提交已经包含在当前分支时，无需重复合并
+          if git merge-base --is-ancestor gitee/master HEAD; then
+            echo "Gitee 没有新的提交"
+            exit 0
+          fi
+
+          # 使用合并而不是 force-push，保留本工作流和 GitHub 侧必要文件
+          git merge --no-edit --no-ff gitee/master -m "chore: sync from Gitee"
+          git push origin HEAD:master
