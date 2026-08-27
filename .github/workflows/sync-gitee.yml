@@ -1,6 +1,9 @@
 name: Sync from Gitee
 
 on:
+  push:
+    branches:
+      - master
   schedule:
     # GitHub Actions 使用 UTC；每小时第 17 分钟检查一次
     - cron: "17 * * * *"
