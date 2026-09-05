@@ -6,7 +6,7 @@ on:
       - master
   schedule:
     # GitHub Actions 使用 UTC；每小时第 17 分钟检查一次
-    - cron: "17 * * * *"
+    - cron: "17 */12 * * *"
   workflow_dispatch:
 
 permissions:
@@ -19,6 +19,7 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout GitHub repository
@@ -34,17 +35,22 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git remote add gitee https://gitee.com/xyzqwefd/Yunzai-MCP-plugin.git
 
-          # Gitee 偶发 TLS/网络失败时重试，避免一次临时故障导致本轮同步失败
+          # Gitee 偶发限流/网络失败时指数退避重试，并限制单次 fetch 时长
+          fetched=false
           for attempt in 1 2 3; do
-            if git fetch --prune gitee master; then
+            if timeout 180 git fetch --prune gitee master; then
+              fetched=true
               break
             fi
-            if [ "$attempt" = 3 ]; then
-              echo "无法拉取 Gitee master，已重试 3 次"
-              exit 1
-            fi
-            sleep 15
+            case "$attempt" in
+              1) sleep 60 ;;
+              2) sleep 300 ;;
+            esac
           done
+          if [ "$fetched" != true ]; then
+            echo "无法拉取 Gitee master，已重试 3 次"
+            exit 1
+          fi
 
           # 源提交已经包含在当前分支时，无需重复合并
           if git merge-base --is-ancestor gitee/master HEAD; then
